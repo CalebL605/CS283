@@ -29,13 +29,12 @@ int setup_buff(char *buff, char *user_str, int len){
                 count++;
                 prev = ' ';
             }
-            else {
-                buff[index++] = *user_str;
-                count++;
-                prev = *user_str;
-            }
-            user_str++;
+        } else {
+            buff[index++] = *user_str;
+            count++;
+            prev = *user_str;
         }
+        user_str++;
     }
 
     // If the user string is not empty, then the user string is too long
@@ -66,8 +65,20 @@ void usage(char *exename){
 }
 
 int count_words(char *buff, int len, int str_len){
-    //YOU MUST IMPLEMENT
-    return 0;
+    int word_count = 0;     //tracks the number of words in the buffer
+    int in_word = 0;        //tracks if the current character is in a word
+
+    // Count the number of words in the buffer
+    for (int i=0; i<str_len; i++) {
+        if (buff[i] == ' '){
+            in_word = 0;
+        } else if (!in_word) {
+            in_word = 1;
+            word_count++;
+        }
+    }
+
+    return word_count;
 }
 
 //ADD OTHER HELPER FUNCTIONS HERE FOR OTHER REQUIRED PROGRAM OPTIONS
@@ -111,9 +122,9 @@ int main(int argc, char *argv[]){
         usage(argv[0]);
         exit(1);
     }
-
+    
     input_string = argv[2]; //capture the user input string
-
+    
     //TODO:  #3 Allocate space for the buffer using malloc and
     //          handle error if malloc fails by exiting with a 
     //          return code of 99
@@ -126,6 +137,7 @@ int main(int argc, char *argv[]){
     user_str_len = setup_buff(buff, input_string, BUFFER_SZ);     //see todos
     if (user_str_len < 0){
         printf("Error setting up buffer, error = %d", user_str_len);
+        free(buff);
         exit(2);
     }
 
@@ -134,6 +146,7 @@ int main(int argc, char *argv[]){
             rc = count_words(buff, BUFFER_SZ, user_str_len);  //you need to implement
             if (rc < 0){
                 printf("Error counting words, rc = %d", rc);
+                free(buff);
                 exit(2);
             }
             printf("Word Count: %d\n", rc);
@@ -141,13 +154,40 @@ int main(int argc, char *argv[]){
 
         //TODO:  #5 Implement the other cases for 'r' and 'w' by extending
         //       the case statement options
+        case 'r':
+            rc = count_words(buff, BUFFER_SZ, user_str_len);  //you need to implement
+            if (rc < 0){
+                printf("Error counting words, rc = %d", rc);
+                free(buff);
+                exit(2);
+            }
+            printf("Word Count: %d\n", rc);
+            break;
+
+        case 'w':
+            rc = count_words(buff, BUFFER_SZ, user_str_len);  //you need to implement
+            if (rc < 0){
+                printf("Error counting words, rc = %d", rc);
+                free(buff);
+                exit(2);
+            }
+            printf("Word Count: %d\n", rc);
+            break;
+
+        case 'x':
+            printf("Not Implemented! Error: %d", 2);
+            free(buff);
+            exit(2);
+
         default:
             usage(argv[0]);
+            free(buff);
             exit(1);
     }
 
     //TODO:  #6 Dont forget to free your buffer before exiting
     print_buff(buff,BUFFER_SZ);
+    free(buff);
     exit(0);
 }
 
