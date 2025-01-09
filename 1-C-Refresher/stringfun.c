@@ -17,7 +17,39 @@ int  count_words(char *, int, int);
 
 int setup_buff(char *buff, char *user_str, int len){
     //TODO: #4:  Implement the setup buff as per the directions
-    return 0; //for now just so the code compiles. 
+    char prev = 'a';    //initialize previous pointer to a non-space character
+    int index = 0;      //tracks the index of the buffer
+    int count = 0;      //tracks the number of characters being put in the buffer
+    
+    // Fill the buffer with the user string
+    while (*user_str != '\0' && count < len){
+        if (*user_str == ' ' || *user_str == '\t'){
+            if (prev != ' ') {
+                buff[index++] = ' ';
+                count++;
+                prev = ' ';
+            }
+            else {
+                buff[index++] = *user_str;
+                count++;
+                prev = *user_str;
+            }
+            user_str++;
+        }
+    }
+
+    // If the user string is not empty, then the user string is too long
+    if (*user_str != '\0'){
+        return -1;
+    }
+
+    // Fill the rest of the buffer with periods
+    while (index < len){
+        buff[index++] = '.';
+    }
+
+    // Return the number of characters in the buffer
+    return count;
 }
 
 void print_buff(char *buff, int len){
@@ -48,8 +80,13 @@ int main(int argc, char *argv[]){
     int  rc;                //used for return codes
     int  user_str_len;      //length of user supplied string
 
-    //TODO:  #1. WHY IS THIS SAFE, aka what if arv[1] does not exist?
-    //      PLACE A COMMENT BLOCK HERE EXPLAINING
+    //TODO:  #1. WHY IS THIS SAFE, aka what if argv[1] does not exist?
+    /* 
+        This is safe because the left-hand expression of the OR statement checks to 
+        see if there are at least two arguments. If argv[1] does not exist then the 
+        program will execute the usage function and exit because it satisfies the 
+        left-hand expression of the OR statement.
+    */
     if ((argc < 2) || (*argv[1] != '-')){
         usage(argv[0]);
         exit(1);
@@ -66,7 +103,10 @@ int main(int argc, char *argv[]){
     //WE NOW WILL HANDLE THE REQUIRED OPERATIONS
 
     //TODO:  #2 Document the purpose of the if statement below
-    //      PLACE A COMMENT BLOCK HERE EXPLAINING
+    /*
+        This if statement checks to see if there are less than 3 arguments. If there are 
+        less than 3 arguments, the program will execute the usage function and exit.
+    */
     if (argc < 3){
         usage(argv[0]);
         exit(1);
@@ -77,8 +117,11 @@ int main(int argc, char *argv[]){
     //TODO:  #3 Allocate space for the buffer using malloc and
     //          handle error if malloc fails by exiting with a 
     //          return code of 99
-    // CODE GOES HERE FOR #3
-
+    buff = (char *)malloc(BUFFER_SZ);
+    if (buff == NULL){
+        printf("Error allocating buffer, error = %d", 99);
+        exit(99);
+    }
 
     user_str_len = setup_buff(buff, input_string, BUFFER_SZ);     //see todos
     if (user_str_len < 0){
