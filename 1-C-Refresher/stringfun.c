@@ -20,13 +20,14 @@ int replace_string(char *, int, char *, char *);
 int setup_buff(char *buff, char *user_str, int len){
     //TODO: #4:  Implement the setup buff as per the directions
     char *buff_ptr = buff;  //pointer to the buffer
-    char prev = 'a';    //initialize previous pointer to a non-space character
+    char prev = ' ';    //initialize previous pointer to a space character
     int count = 0;      //tracks the number of characters being put in the buffer
     
     // Fill the buffer with the user string
     while (*user_str != '\0' && count < len){
         if (*user_str == ' ' || *user_str == '\t'){
-            if (prev != ' ') {
+            // If the previous character was not a space or tab and the next character is not a space, tab, or \0, add a space
+            if (prev != ' ' && prev != '\t' && *(user_str+1) != ' ' && *(user_str+1) != '\t' && *(user_str+1) != '\0'){ 
                 *buff_ptr++ = ' ';
                 count++;
                 prev = ' ';
