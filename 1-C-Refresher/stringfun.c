@@ -15,7 +15,7 @@ int  count_words(char *, int, int);
 //add additional prototypes here
 int reverse_string(char *, int);
 int word_print(char *, int);
-int replace_string(char *, int, char *, char *);
+int replace_string(char *, int, int, char *, char *);
 
 int setup_buff(char *buff, char *user_str, int len){
     //TODO: #4:  Implement the setup buff as per the directions
@@ -58,10 +58,11 @@ int setup_buff(char *buff, char *user_str, int len){
 }
 
 void print_buff(char *buff, int len){
-    printf("Buffer:  ");
+    printf("Buffer:  [");
     for (int i=0; i<len; i++){
         putchar(*(buff+i));
     }
+    putchar(']');
     putchar('\n');
 }
 
@@ -96,13 +97,23 @@ int count_words(char *buff, int len, int str_len){
 
 int reverse_string(char *buff, int str_len){
     char reversed_string[str_len];  //holds the reversed string
+    char temp_char;                 //used to swap characters
 
-    // Reverse the string
-    for(int i=0; i<str_len; i++){
-        *(reversed_string+i) = *(buff+str_len-i-1);
+    // Reverse the string in the buffer
+    for(int i=0; i<str_len/2; i++){
+        temp_char = *(buff+str_len-i-1);
+        *(buff+str_len-i-1) = *(buff+i);
+        *(buff+i) = temp_char;
     }
 
-    printf("Reversed String: %s\n", reversed_string);
+    // Copy the reversed string into a new string to be printed without the periods
+    for(int i=0; i<str_len; i++){
+        *(reversed_string+i) = *(buff+i);
+    }
+
+    *(reversed_string+str_len) = '\0';  //null terminate the reversed string
+
+    //printf("Reversed String: %s\n", reversed_string);
     return 0;
 }
 
@@ -122,7 +133,7 @@ int word_print(char *buff, int str_len){
                 for (int j = word_start; j<word_start+word_length; j++) {
                     putchar(*(buff+j));
                 }
-                printf(" (%d)\n", word_length);
+                printf("(%d)\n", word_length);
                 word_length = 0;
             }
         } else {
@@ -133,10 +144,11 @@ int word_print(char *buff, int str_len){
         }
     }
 
+    printf("\nNumber of words returned: %d\n", word_count);
     return 0;
 }
 
-int replace_string(char *buff, int str_len, char *search, char *replace){
+int replace_string(char *buff, int len, int str_len, char *search, char *replace){
     int search_len = 0;    //length of the search string
     int replace_len = 0;   //length of the replace string
 
@@ -189,12 +201,7 @@ int replace_string(char *buff, int str_len, char *search, char *replace){
         return -5;
     }
 
-    // If the new length of the string exceeds the buffer size, return an error
-    if (str_len-search_len+replace_len > BUFFER_SZ) {
-        return -6;
-    }
-
-    char new[BUFFER_SZ];   //store the new modified string
+    char new[len];        //store the new modified string
     char *new_ptr = new;  //pointer to the new string
 
     // Copy the buffer into the new string with the search string replaced
@@ -202,16 +209,33 @@ int replace_string(char *buff, int str_len, char *search, char *replace){
         *new_ptr++ = *ptr;
     }
     for (char *ptr = replace; *ptr != '\0'; ptr++) {
+        if (new_ptr-new >= len) {
+            break;
+        }
         *new_ptr++ = *ptr;
     }
     for (char *ptr = match_start+search_len; ptr < buff+str_len; ptr++) {
+         if (new_ptr-new >= len) {
+            break;
+        }
         *new_ptr++ = *ptr;
     }
 
     // Null terminate the new string
     *new_ptr = '\0';
 
-    printf("Modified String: %s\n", new);
+    // Copy the new string back into the buffer
+    int new_str_len = new_ptr-new;
+    for (int i = 0; i < new_str_len; i++) {
+        *(buff+i) = *(new+i);
+    }
+
+    // Fill the rest of the buffer with periods
+    while (new_str_len < len){
+        *(buff+new_str_len++) = '.';
+    }
+
+    //printf("Modified String: %s\n", new);
     return 0;
 }
 
@@ -312,7 +336,7 @@ int main(int argc, char *argv[]){
                 exit(1);
             }
 
-            rc = replace_string(buff, user_str_len, argv[3], argv[4]);
+            rc = replace_string(buff, BUFFER_SZ, user_str_len, argv[3], argv[4]);
             if (rc < 0){
                 printf("Error searching and replacing words, rc = %d\n", rc);
                 free(buff);
