@@ -139,7 +139,7 @@ int add_student(int fd, int id, char *fname, char *lname, int gpa){
         return ERR_DB_FILE;
     }
 
-    // Write the student to the file
+    // Create the student
     student.id = id;
     strncpy(student.fname, fname, sizeof(student.fname) - 1);
     strncpy(student.lname, lname, sizeof(student.lname) - 1);
