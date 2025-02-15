@@ -47,6 +47,7 @@ typedef struct command{
 #define OK_EXIT                 -7
 
 //prototypes
+char* trim_whitespace(char* str);
 int alloc_cmd_buff(cmd_buff_t *cmd_buff);
 int free_cmd_buff(cmd_buff_t *cmd_buff);
 int clear_cmd_buff(cmd_buff_t *cmd_buff);
@@ -68,12 +69,13 @@ Built_In_Cmds exec_built_in_cmd(cmd_buff_t *cmd);
 int exec_local_cmd_loop();
 int exec_cmd(cmd_buff_t *cmd);
 
-
-
-
 //output constants
 #define CMD_OK_HEADER       "PARSED COMMAND LINE - TOTAL COMMANDS %d\n"
 #define CMD_WARN_NO_CMD     "warning: no commands provided\n"
 #define CMD_ERR_PIPE_LIMIT  "error: piping limited to %d commands\n"
+#define CMD_ERR_EXECUTE     "error: command execution failed\n"
+#define MEM_ERR             "error: memory allocation failed\n"
+#define CD_DIR_ERR          "error: could not change directory to %s\n"
+#define CD_TOO_MANY_ARGS    "error: too many arguments for cd\n"
 
 #endif
