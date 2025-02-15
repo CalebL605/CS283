@@ -276,9 +276,6 @@ int exec_local_cmd_loop()
 
         // Execute the external command
         rc = exec_cmd(&cmd_buff);
-        if (rc != OK) {
-            printf(CMD_ERR_EXECUTE);
-        }
 
         // Store the return code of the last command
         last_rc = rc;
@@ -296,18 +293,21 @@ int exec_cmd(cmd_buff_t *cmd) {
     pid_t pid = fork();
     if (pid < 0) {
         // Fork failed
+        printf(CMD_ERR_EXECUTE);
         return ERR_EXEC_CMD;
     } else if (pid == 0) {
         // Child process
         if (execvp(cmd->argv[0], cmd->argv) < 0) {
-            return(ERR_EXEC_CMD);
+            printf(CMD_ERR_EXECUTE);
+            exit(0);
+            return ERR_EXEC_CMD;
         }
     } else {
         // Parent process
         int status;
         waitpid(pid, &status, 0);
         if (WIFEXITED(status)) {
-            last_rc = WEXITSTATUS(status);
+            return WEXITSTATUS(status);
         }
     }
 
