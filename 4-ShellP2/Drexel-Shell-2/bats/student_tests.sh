@@ -167,16 +167,6 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "Invalid external command: returns error message" {
-    run ./dsh <<EOF
-nonexistentcommand
-exit
-EOF
-    # Check that the error message gets returned
-    [[ "$output" == *"error: command execution failed"* ]]
-    [ "$status" -eq 0 ]
-}
-
 @test "External command with arguments: ls -l produces output" {
   run ./dsh <<EOF
 ls -l
@@ -185,4 +175,79 @@ EOF
   # Check that ls -l returns some output (non-empty).
   [ -n "$output" ]
   [ "$status" -eq 0 ]
+}
+
+@test "Invalid external command: returns ENOENT error message" {
+    run ./dsh <<EOF
+nonexistentcommand
+exit
+EOF
+    # Check that the error message gets returned
+    [[ "$output" == *"Error: Command not found in PATH"* ]]
+    [ "$status" -eq 0 ]
+}
+
+@test "Invalid external command: EACCES error message" {
+    # Create a temporary file that is not executable.
+    tmpfile=$(mktemp /tmp/no_exec.XXXX)
+    echo "#!/bin/sh" > "$tmpfile"
+    echo "echo 'This should not run'" >> "$tmpfile"
+    chmod -x "$tmpfile"  # Remove execute permissions
+
+    run ./dsh <<EOF
+$tmpfile
+exit
+EOF
+
+    # Check that the EACCES error message appears.
+    [[ "$output" == *"Error: Permission denied"* ]]
+    [ "$status" -eq 0 ]
+    
+    rm -f "$tmpfile"
+}
+
+@test "Invalid external command: Default error message for other error codes" {
+    run ./dsh <<EOF
+false
+exit
+EOF
+
+  [[ "$output" == *"Command execution failed with code 1"* ]]
+  [ "$status" -eq 0 ]
+}
+
+@test "Built-in rc: displays code 2 for external command with ENOENT error" {
+    run ./dsh <<EOF
+not_exists
+rc
+exit
+EOF
+  
+    stripped_output=$(echo "$output" | tr -d '[:space:]')
+    expected_output="dsh2>dsh2>Error:CommandnotfoundinPATHdsh2>2dsh2>cmdloopreturned-7"
+
+    echo "Captured output: $output"
+    echo "Stripped output: $stripped_output"
+    echo "Expected output: $expected_output"
+
+    [ "$stripped_output" = "$expected_output" ]
+    [ "$status" -eq 0 ]
+}
+
+@test "Built-in rc: displays 0 for a successful command" {
+    run ./dsh <<EOF
+echo "success"
+rc
+exit
+EOF
+
+    stripped_output=$(echo "$output" | tr -d '[:space:]')
+    expected_output="successdsh2>dsh2>0dsh2>cmdloopreturned-7"
+
+    echo "Captured output: $output"
+    echo "Stripped output: $stripped_output"
+    echo "Expected output: $expected_output"
+
+    [ "$stripped_output" = "$expected_output" ]
+    [ "$status" -eq 0 ]
 }

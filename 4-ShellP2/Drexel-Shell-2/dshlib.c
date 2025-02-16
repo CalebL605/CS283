@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <errno.h>
+
 #include "dshlib.h"
 
 // The Drexel Dragon ASCII art print function from dragon.c file
@@ -298,16 +300,33 @@ int exec_cmd(cmd_buff_t *cmd) {
     } else if (pid == 0) {
         // Child process
         if (execvp(cmd->argv[0], cmd->argv) < 0) {
-            printf(CMD_ERR_EXECUTE);
-            exit(0);
+            exit(errno);
             return ERR_EXEC_CMD;
         }
-    } else {
+    } else {    
         // Parent process
         int status;
         waitpid(pid, &status, 0);
         if (WIFEXITED(status)) {
-            return WEXITSTATUS(status);
+            int rc = WEXITSTATUS(status);
+            if (rc != 0) {
+                // Determine error type based on errno
+                switch (rc) {
+                    case ENOENT:
+                        printf("Error: Command not found in PATH\n");
+                        break;
+                    case EACCES:
+                        printf("Error: Permission denied\n");
+                        break;
+                    default:
+                        printf("Command execution failed with code %d\n", rc);
+                        break;
+                }
+            }
+            return rc;
+        } else {
+            printf(CMD_ERR_EXECUTE);
+            return ERR_EXEC_CMD;
         }
     }
 
