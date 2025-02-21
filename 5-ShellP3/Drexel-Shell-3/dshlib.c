@@ -362,11 +362,13 @@ int exec_cmd(cmd_buff_t *cmd) {
 // Function to execute the pipeline
 int exec_pipeline(command_list_t *clist) {
     pid_t pids[CMD_MAX] = {0};
-    int prev_fd = -1;  // read end of previous pipe
+    int prev_fd = -1;
     int rc = OK;
 
     for (int i = 0; i < clist->num; i++) {
         int pipefd[2] = { -1, -1 };
+
+        // Create a new pipe for all but the last command.
         if (i < clist->num - 1) {
             if (pipe(pipefd) < 0) {
                 return ERR_MEMORY;
@@ -376,32 +378,35 @@ int exec_pipeline(command_list_t *clist) {
         pids[i] = fork();
         if (pids[i] < 0) {
             return ERR_EXEC_CMD;
-        } else if (pids[i] == 0) {
+        }
+
+        if (pids[i] == 0) { 
             // Child process
             if (prev_fd != -1) {
                 if (dup2(prev_fd, STDIN_FILENO) < 0) {
                     exit(errno);
                 }
-            } else if (i < clist->num - 1) {
+                close(prev_fd); 
+            }
+            // If not the last command, attach the current pipe's write end to STDOUT.
+            if (i < clist->num - 1) {
                 if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
                     exit(errno);
                 }
-            }
-
-            // Close all pipe file descriptors
-            if (prev_fd != -1) {
-                close(prev_fd);
-            } else if (i < clist->num - 1) {
                 close(pipefd[0]);
                 close(pipefd[1]);
             }
-
-            // Execute the command
+            // Apply any command-specific redirection.
             do_redirection(&clist->commands[i]);
+
+            // If the command is built-in, execute it.
             if (match_command(clist->commands[i].argv[0]) != BI_NOT_BI) {
                 exec_built_in_cmd(&clist->commands[i]);
                 exit(0);
-            } else if (execvp(clist->commands[i].argv[0], clist->commands[i].argv) < 0) {
+            }
+
+            // Execute the external command
+            if (execvp(clist->commands[i].argv[0], clist->commands[i].argv) < 0) {
                 exit(errno);
             }
             exit(0);
@@ -409,7 +414,8 @@ int exec_pipeline(command_list_t *clist) {
             // Parent process
             if (prev_fd != -1) {
                 close(prev_fd);
-            } else if (i < clist->num - 1) {
+            }
+            if (i < clist->num - 1) {
                 close(pipefd[1]);
                 prev_fd = pipefd[0];
             }
@@ -514,6 +520,9 @@ int exec_local_cmd_loop()
         // Check if no commands were entered
         if (rc == WARN_NO_CMDS) {
             printf(CMD_WARN_NO_CMD);
+            continue;
+        } else if (rc == ERR_TOO_MANY_COMMANDS) {
+            printf(CMD_ERR_PIPE_LIMIT, CMD_MAX);
             continue;
         }
 
