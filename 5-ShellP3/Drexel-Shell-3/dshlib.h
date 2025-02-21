@@ -21,6 +21,9 @@ typedef struct cmd_buff
     int  argc;
     char *argv[CMD_ARGV_MAX];
     char *_cmd_buffer;
+    char *input_file;   // For input redirection (<)
+    char *output_file;  // For output redirection (> or >>)
+    int  out_append;    // 0 for overwrite (>), 1 for append (>>)
 } cmd_buff_t;
 
 /* WIP - Move to next assignment 
@@ -58,6 +61,7 @@ typedef struct command_list{
 #define OK_EXIT                 -7
 
 //prototypes
+char* trim_whitespace(char* str);
 int alloc_cmd_buff(cmd_buff_t *cmd_buff);
 int free_cmd_buff(cmd_buff_t *cmd_buff);
 int clear_cmd_buff(cmd_buff_t *cmd_buff);
@@ -65,6 +69,7 @@ int build_cmd_buff(char *cmd_line, cmd_buff_t *cmd_buff);
 int close_cmd_buff(cmd_buff_t *cmd_buff);
 int build_cmd_list(char *cmd_line, command_list_t *clist);
 int free_cmd_list(command_list_t *cmd_lst);
+void do_redirection(cmd_buff_t *cmd);
 
 //built in command stuff
 typedef enum {
@@ -73,6 +78,7 @@ typedef enum {
     BI_CMD_CD,
     BI_NOT_BI,
     BI_EXECUTED,
+    BI_RC,
 } Built_In_Cmds;
 Built_In_Cmds match_command(const char *input); 
 Built_In_Cmds exec_built_in_cmd(cmd_buff_t *cmd);
@@ -80,14 +86,15 @@ Built_In_Cmds exec_built_in_cmd(cmd_buff_t *cmd);
 //main execution context
 int exec_local_cmd_loop();
 int exec_cmd(cmd_buff_t *cmd);
-int execute_pipeline(command_list_t *clist);
-
-
-
+int exec_pipeline(command_list_t *clist);
 
 //output constants
 #define CMD_OK_HEADER       "PARSED COMMAND LINE - TOTAL COMMANDS %d\n"
 #define CMD_WARN_NO_CMD     "warning: no commands provided\n"
 #define CMD_ERR_PIPE_LIMIT  "error: piping limited to %d commands\n"
+#define CMD_ERR_EXECUTE     "error: command execution failed\n"
+#define MEM_ERR             "error: memory allocation failed\n"
+#define CD_DIR_ERR          "error: could not change directory to %s\n"
+#define CD_TOO_MANY_ARGS    "error: too many arguments for cd\n"
 
 #endif
