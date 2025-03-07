@@ -67,9 +67,4 @@ int process_cli_requests(int svr_socket);
 int exec_client_requests(int cli_socket);
 int rsh_execute_pipeline(int socket_fd, command_list_t *clist);
 
-// SEE COMMENTS IN THE CODE, THESE ARE OPTIONAL IN CASE YOU WANT TO PROVIDE
-// SUPPORT FOR BUILT-IN FUNCTIONS DIFFERENTLY 
-Built_In_Cmds rsh_match_command(const char *input);
-Built_In_Cmds rsh_built_in_cmd(cmd_buff_t *cmd);
-
 #endif

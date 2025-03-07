@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/un.h>
 #include <fcntl.h>
+#include <errno.h>
 
 //INCLUDES for extra credit
 //#include <signal.h>
@@ -47,6 +48,7 @@
  *      TO DO SOMETHING WITH THE is_threaded ARGUMENT HOWEVER.  
  */
 int start_server(char *ifaces, int port, int is_threaded){
+    (void)is_threaded;
     int svr_socket;
     int rc;
 
@@ -115,7 +117,44 @@ int stop_server(int svr_socket){
  * 
  */
 int boot_server(char *ifaces, int port){
-    return WARN_RDSH_NOT_IMPL;
+    int svr_socket;
+    struct sockaddr_in server_addr;
+    int enable = 1;
+
+    // Create the socket
+    svr_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (svr_socket < 0) {
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    // Allow reuse of the address
+    if (setsockopt(svr_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+        close(svr_socket);
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    // Setup the address struct
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    if (inet_pton(AF_INET, ifaces, &server_addr.sin_addr) <= 0) {
+        close(svr_socket);
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    // Bind the socket
+    if (bind(svr_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        close(svr_socket);
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    // Listen with a backlog of 5
+    if (listen(svr_socket, 5) < 0) {
+        close(svr_socket);
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    return svr_socket;
 }
 
 /*
@@ -159,8 +198,29 @@ int boot_server(char *ifaces, int port){
  *                connections, and negative values terminate the server. 
  * 
  */
-int process_cli_requests(int svr_socket){
-    return WARN_RDSH_NOT_IMPL;
+int process_cli_requests(int svr_socket) {
+    int cli_socket;
+    int rc;
+    struct sockaddr_in client_addr;
+    socklen_t addrlen = sizeof(client_addr);
+    
+    while (1) {
+        cli_socket = accept(svr_socket, (struct sockaddr *)&client_addr, &addrlen);
+        if (cli_socket < 0) {
+            return ERR_RDSH_COMMUNICATION;
+        }
+        
+        printf("Accepted client connection...\n");
+        rc = exec_client_requests(cli_socket);
+        
+        // If the client sent "stop-server", rc would be OK_EXIT, which stops the server.
+        if (rc == OK_EXIT) {
+            break;    // Stop the server.
+        }
+    }
+    
+    stop_server(cli_socket);
+    return OK_EXIT;
 }
 
 /*
@@ -205,7 +265,104 @@ int process_cli_requests(int svr_socket){
  *                or receive errors. 
  */
 int exec_client_requests(int cli_socket) {
-    return WARN_RDSH_NOT_IMPL;
+    char *io_buff = malloc(RDSH_COMM_BUFF_SZ);
+    if (!io_buff) {
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    while (1) {
+        memset(io_buff, 0, RDSH_COMM_BUFF_SZ);
+        int total_received = 0;
+        int recv_bytes;
+        int is_last_chunk = 0;
+        
+        // Receive data until we see the EOF marker
+        while (!is_last_chunk) {
+            recv_bytes = recv(cli_socket, io_buff + total_received, RDSH_COMM_BUFF_SZ - total_received, 0);
+            if (recv_bytes < 0) {
+                free(io_buff);
+                return ERR_RDSH_COMMUNICATION;
+            }
+            if (recv_bytes == 0) {
+                // Connection closed by client
+                free(io_buff);
+                return OK;
+            }
+            total_received += recv_bytes;
+            if (io_buff[total_received - 1] == RDSH_EOF_CHAR)
+                is_last_chunk = 1;
+        }
+        
+        // Remove the EOF marker by replacing it with a '\0'
+        io_buff[total_received - 1] = '\0';
+        printf("Received command: [%s]\n", io_buff);
+
+        // Special handling for "exit" and "stop-server"
+        if (strcmp(io_buff, "exit") == 0) {
+            // "exit" should only close this client connection.
+            printf(RCMD_MSG_CLIENT_EXITED);
+            send_message_string(cli_socket, "exiting...\n");
+            free(io_buff);
+            return OK;  // End this client session; server keeps running.
+        }
+        if (strcmp(io_buff, "stop-server") == 0) {
+            printf(RCMD_MSG_SVR_STOP_REQ);
+            send_message_string(cli_socket, "exiting...\n");
+            free(io_buff);
+            return OK_EXIT;  // This code signals process_cli_requests() to break and stop the server.
+        }
+        
+        // Process the commands 
+        command_list_t cmd_list;
+        int build_status = build_cmd_list(io_buff, &cmd_list);
+        if (build_status != OK) {
+            free(io_buff);
+            return build_status;
+        }
+        
+        // Check if the first command is built-in by using the functions from dshlib.c.
+        Built_In_Cmds bi = match_command(cmd_list.commands[0].argv[0]);
+        if (bi != BI_NOT_BI) {
+            // Built-in command was matched
+            pid_t pid = fork();
+            if (pid == 0) {
+                // Child process
+                // Redirect stdout and stderr to client socket
+                if (dup2(cli_socket, STDOUT_FILENO) < 0) {
+                    exit(errno);
+                }
+                if (dup2(cli_socket, STDERR_FILENO) < 0) {
+                    exit(errno);
+                }
+                
+                // Execute the built-in command
+                int bi_rc = exec_built_in_cmd(&cmd_list.commands[0]);
+                exit(bi_rc);  // Exit with the built-in command's return code
+            } else if (pid > 0) {
+                // Parent process
+                int status;
+                waitpid(pid, &status, 0);
+                
+                // Send EOF marker to signal end-of-output
+                send_message_eof(cli_socket);
+                free_cmd_list(&cmd_list);
+            } else {
+                // Fork failed
+                char error_msg[] = "Fork failed for built-in command\n";
+                send_message_string(cli_socket, error_msg);
+                free_cmd_list(&cmd_list);
+            }
+        } else {
+            // Not a built-in command. Execute as external command or pipeline.
+            rsh_execute_pipeline(cli_socket, &cmd_list);
+            // Instead of sending rc_msg, just send the EOF marker to signal end-of-output.
+            send_message_eof(cli_socket);
+            free_cmd_list(&cmd_list);
+        }
+    }
+    
+    free(io_buff);
+    return OK; // unreachable
 }
 
 /*
@@ -222,8 +379,12 @@ int exec_client_requests(int cli_socket) {
  *      ERR_RDSH_COMMUNICATION:  The send() socket call returned an error or if
  *           we were unable to send the EOF character. 
  */
-int send_message_eof(int cli_socket){
-    return WARN_RDSH_NOT_IMPL;
+int send_message_eof(int cli_socket) {
+    int bytes_sent = send(cli_socket, &RDSH_EOF_CHAR, 1, 0);
+    if (bytes_sent != 1) {
+        return ERR_RDSH_COMMUNICATION;
+    }
+    return OK;
 }
 
 /*
@@ -244,8 +405,15 @@ int send_message_eof(int cli_socket){
  *      ERR_RDSH_COMMUNICATION:  The send() socket call returned an error or if
  *           we were unable to send the message followed by the EOF character. 
  */
-int send_message_string(int cli_socket, char *buff){
-    return WARN_RDSH_NOT_IMPL;
+int send_message_string(int cli_socket, char *buff) {
+    int len = strlen(buff);
+    int bytes_sent = send(cli_socket, buff, len, 0);
+    if (bytes_sent != len) {
+        fprintf(stderr, CMD_ERR_RDSH_SEND, bytes_sent, len);
+        return ERR_RDSH_COMMUNICATION;
+    }
+    
+    return send_message_eof(cli_socket);
 }
 
 
@@ -288,80 +456,110 @@ int send_message_string(int cli_socket, char *buff){
  *                  get this value. 
  */
 int rsh_execute_pipeline(int cli_sock, command_list_t *clist) {
-    return WARN_RDSH_NOT_IMPL;
-}
+    pid_t pids[CMD_MAX] = {0};
+    int prev_fd = cli_sock;  // Start with client socket as input
+    int rc = OK;
 
-/**************   OPTIONAL STUFF  ***************/
-/****
- **** NOTE THAT THE FUNCTIONS BELOW ALIGN TO HOW WE CRAFTED THE SOLUTION
- **** TO SEE IF A COMMAND WAS BUILT IN OR NOT.  YOU CAN USE A DIFFERENT
- **** STRATEGY IF YOU WANT.  IF YOU CHOOSE TO DO SO PLEASE REMOVE THESE
- **** FUNCTIONS AND THE PROTOTYPES FROM rshlib.h
- **** 
- */
+    for (int i = 0; i < clist->num; i++) {
+        int pipefd[2] = { -1, -1 };
 
-/*
- * rsh_match_command(const char *input)
- *      cli_socket:  The string command for a built-in command, e.g., dragon,
- *                   cd, exit-server
- *   
- *  This optional function accepts a command string as input and returns
- *  one of the enumerated values from the BuiltInCmds enum as output. For
- *  example:
- * 
- *      Input             Output
- *      exit              BI_CMD_EXIT
- *      dragon            BI_CMD_DRAGON
- * 
- *  This function is entirely optional to implement if you want to handle
- *  processing built-in commands differently in your implementation. 
- * 
- *  Returns:
- * 
- *      BI_CMD_*:   If the command is built-in returns one of the enumeration
- *                  options, for example "cd" returns BI_CMD_CD
- * 
- *      BI_NOT_BI:  If the command is not "built-in" the BI_NOT_BI value is
- *                  returned. 
- */
-Built_In_Cmds rsh_match_command(const char *input)
-{
-    return BI_NOT_IMPLEMENTED;
-}
+        // Create a new pipe for all but the last command
+        if (i < clist->num - 1) {
+            if (pipe(pipefd) < 0) {
+                return ERR_MEMORY;
+            }
+        }
 
-/*
- * rsh_built_in_cmd(cmd_buff_t *cmd)
- *      cmd:  The cmd_buff_t of the command, remember, this is the 
- *            parsed version fo the command
- *   
- *  This optional function accepts a parsed cmd and then checks to see if
- *  the cmd is built in or not.  It calls rsh_match_command to see if the 
- *  cmd is built in or not.  Note that rsh_match_command returns BI_NOT_BI
- *  if the command is not built in. If the command is built in this function
- *  uses a switch statement to handle execution if appropriate.   
- * 
- *  Again, using this function is entirely optional if you are using a different
- *  strategy to handle built-in commands.  
- * 
- *  Returns:
- * 
- *      BI_NOT_BI:   Indicates that the cmd provided as input is not built
- *                   in so it should be sent to your fork/exec logic
- *      BI_EXECUTED: Indicates that this function handled the direct execution
- *                   of the command and there is nothing else to do, consider
- *                   it executed.  For example the cmd of "cd" gets the value of
- *                   BI_CMD_CD from rsh_match_command().  It then makes the libc
- *                   call to chdir(cmd->argv[1]); and finally returns BI_EXECUTED
- *      BI_CMD_*     Indicates that a built-in command was matched and the caller
- *                   is responsible for executing it.  For example if this function
- *                   returns BI_CMD_STOP_SVR the caller of this function is
- *                   responsible for stopping the server.  If BI_CMD_EXIT is returned
- *                   the caller is responsible for closing the client connection.
- * 
- *   AGAIN - THIS IS TOTALLY OPTIONAL IF YOU HAVE OR WANT TO HANDLE BUILT-IN
- *   COMMANDS DIFFERENTLY. 
- */
-Built_In_Cmds rsh_built_in_cmd(cmd_buff_t *cmd)
-{
-    return BI_NOT_IMPLEMENTED;
+        pids[i] = fork();
+        if (pids[i] < 0) {
+            return ERR_EXEC_CMD;
+        }
+
+        if (pids[i] == 0) { 
+            // Child process
+            if (prev_fd != -1) {
+                if (dup2(prev_fd, STDIN_FILENO) < 0) {
+                    exit(errno);
+                }
+                if (prev_fd != cli_sock) {  // Don't close cli_sock if it's being used for input
+                    close(prev_fd);
+                }
+            }
+
+            if (i < clist->num - 1) {
+                // Not the last command: pipe output to next command
+                if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
+                    exit(errno);
+                }
+                close(pipefd[0]);
+                close(pipefd[1]);
+            } else {
+                // Last command: redirect output to client socket
+                if (dup2(cli_sock, STDOUT_FILENO) < 0) {
+                    exit(errno);
+                }
+                if (dup2(cli_sock, STDERR_FILENO) < 0) {
+                    exit(errno);
+                }
+            }
+
+            // Apply any command-specific redirection
+            do_redirection(&clist->commands[i]);
+
+            // If the command is built-in, execute it
+            if (match_command(clist->commands[i].argv[0]) != BI_NOT_BI) {
+                exec_built_in_cmd(&clist->commands[i]);
+                exit(0);
+            }
+
+            // Execute the external command
+            if (execvp(clist->commands[i].argv[0], clist->commands[i].argv) < 0) {
+                exit(errno);
+            }
+            exit(0);
+        } else {
+            // Parent process
+            if (prev_fd != -1 && prev_fd != cli_sock) {
+                close(prev_fd);
+            }
+            if (i < clist->num - 1) {
+                close(pipefd[1]);
+                prev_fd = pipefd[0];
+            }
+        }
+    }
+
+    // Parent waits for all children
+    for (int i = 0; i < clist->num; i++) {
+        int status;
+        waitpid(pids[i], &status, 0);
+        if (WIFEXITED(status)) {
+            if (i == clist->num - 1) {
+                rc = WEXITSTATUS(status);
+                if (rc != 0) {
+                    // Send error messages back to client through socket
+                    char error_msg[256];
+                    switch (rc) {
+                        case ENOENT:
+                            snprintf(error_msg, sizeof(error_msg), "Error: Command not found in PATH\n");
+                            write(cli_sock, error_msg, strlen(error_msg));
+                            break;
+                        case EACCES:
+                            snprintf(error_msg, sizeof(error_msg), "Error: Permission denied\n");
+                            write(cli_sock, error_msg, strlen(error_msg));
+                            break;
+                        default:
+                            snprintf(error_msg, sizeof(error_msg), "Command execution failed with code %d\n", rc);
+                            write(cli_sock, error_msg, strlen(error_msg));
+                            break;
+                    }
+                }
+            }
+        } else {
+            char error_msg[] = CMD_ERR_EXECUTE;
+            write(cli_sock, error_msg, strlen(error_msg));
+            rc = ERR_EXEC_CMD;
+        }
+    }
+    return rc;
 }
